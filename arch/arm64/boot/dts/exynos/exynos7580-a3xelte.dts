@@ -1,0 +1,204 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Samsung Galaxy A3 (2016) SM-A310F (a3xelte) - minimal bring-up DT
+ * for booting mainline through the stock Samsung bootloader.
+ */
+/dts-v1/;
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/memreserve/ 0x9f700000 0x00900000;
+/memreserve/ 0x90000000 0x05c00000;
+
+/ {
+	model = "Samsung A3XE revision 1 board based on EXYNOS7580";
+	compatible = "samsung,exynos7580-universal7580,r01", "samsung,exynos7580";
+	interrupt-parent = <&gic>;
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	/* used only by the Samsung dtbtool/bootloader */
+	model_info-chip = <0x1d9c>;
+	model_info-platform = "android";
+	model_info-subtype = "samsung";
+	model_info-hw_rev = <0x01>;
+	model_info-hw_rev_end = <0x01>;
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		bootargs = "essconsole console=tty0 ignore_loglevel loglevel=8 rdinit=/init panic=0 clk_ignore_unused";
+		linux,initrd-start = <0x42000000>;
+		linux,initrd-end = <0x42200000>;
+
+		/* S-Boot framebuffer: DECON window 0, 720x1280 ARGB8888 */
+		framebuffer@67000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0x67000000 0x0 0x00384000>;
+			width = <720>;
+			height = <1280>;
+			stride = <2880>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	/* stay below the TZ/ion/modem carveouts (0x90000000+) for now */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x50000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* Exynos snapshot (last_kmsg) region, ess_setup=0x46000000 */
+		ess@46000000 {
+			reg = <0x0 0x46000000 0x0 0x01400000>;
+			no-map;
+		};
+
+		/* bootloader framebuffer (s3cfb.bootloaderfb=0x67000000) */
+		fb@67000000 {
+			reg = <0x0 0x67000000 0x0 0x00800000>;
+			no-map;
+		};
+
+		/* modem shared memory, memreserve in stock DT */
+		shmem@90000000 {
+			reg = <0x0 0x90000000 0x0 0x05c00000>;
+			no-map;
+		};
+
+		/* ion/CMA video + MFC + FIMC-IS carveouts (TZ protected) */
+		carveouts@99000000 {
+			reg = <0x0 0x99000000 0x0 0x07000000>;
+			no-map;
+		};
+	};
+
+	cpus {
+		#address-cells = <2>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x0>;
+			enable-method = "psci";
+		};
+		cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x1>;
+			enable-method = "psci";
+		};
+		cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x2>;
+			enable-method = "psci";
+		};
+		cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x0 0x3>;
+			enable-method = "psci";
+		};
+	};
+
+	psci {
+		compatible = "arm,psci";
+		method = "smc";
+		cpu_suspend = <0xc4000001>;
+		cpu_off = <0x84000002>;
+		cpu_on = <0xc4000003>;
+	};
+
+	gic: interrupt-controller@10c01000 {
+		compatible = "arm,cortex-a15-gic";
+		#interrupt-cells = <3>;
+		interrupt-controller;
+		reg = <0x0 0x10c01000 0x0 0x1000>,
+		      <0x0 0x10c02000 0x0 0x1000>,
+		      <0x0 0x10c04000 0x0 0x2000>,
+		      <0x0 0x10c06000 0x0 0x2000>;
+		interrupts = <GIC_PPI 9
+			(GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_HIGH)>;
+	};
+
+	/* PMU: SWRESET @0x400, PS_HOLD_CONTROL @0x330c (from downstream exynos_restart) */
+	pmu: system-controller@10460000 {
+		compatible = "syscon";
+		reg = <0x0 0x10460000 0x0 0x10000>;
+	};
+
+	reboot {
+		compatible = "syscon-reboot";
+		regmap = <&pmu>;
+		offset = <0x400>;
+		mask = <0x1>;
+		value = <0x1>;
+	};
+
+	poweroff {
+		compatible = "syscon-poweroff";
+		regmap = <&pmu>;
+		offset = <0x330c>;
+		mask = <0x100>;
+		value = <0x0>;
+	};
+
+	/* eMMC clocks as left by S-Boot (ciu 400MHz in DDR52, internal /4) */
+	mmc0_biu: clock-mmc0-biu {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+		clock-output-names = "mmc0_biu";
+	};
+
+	mmc0_ciu: clock-mmc0-ciu {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <400000000>;
+		clock-output-names = "mmc0_ciu";
+	};
+
+	mmc0: mmc@13540000 {
+		compatible = "samsung,exynos7-dw-mshc-smu";
+		reg = <0x0 0x13540000 0x0 0x2000>;
+		interrupts = <GIC_SPI 245 IRQ_TYPE_LEVEL_HIGH>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		clocks = <&mmc0_biu>, <&mmc0_ciu>;
+		clock-names = "biu", "ciu";
+		fifo-depth = <0x40>;
+		samsung,dw-mshc-ciu-div = <3>;
+		samsung,dw-mshc-sdr-timing = <0 2>;
+		samsung,dw-mshc-ddr-timing = <2 2>;
+		bus-width = <8>;
+		non-removable;
+		broken-cd;
+		cap-mmc-highspeed;
+		status = "okay";
+	};
+
+	usb@13580000 {
+		compatible = "snps,dwc2";
+		reg = <0x0 0x13580000 0x0 0x1000>;
+		interrupts = <GIC_SPI 238 IRQ_TYPE_LEVEL_HIGH>;
+		dr_mode = "peripheral";
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
+			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;
+		clock-frequency = <26000000>;
+		samsung,use-physical-timer;
+	};
+};
